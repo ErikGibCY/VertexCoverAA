@@ -30,7 +30,8 @@ vertex-cover-ids/
 ├── src/
 │   ├── graph.py        # Estructura de grafo (lista de adyacencia) + generadores + I/O
 │   ├── solver.py        # VertexCoverSolver: greedy, matching maximal, exacto (fuerza bruta)
-│   └── verify.py        # Validación de coberturas y cálculo de ratio de aproximación
+│   ├── verify.py        # Validación de coberturas y cálculo de ratio de aproximación
+│
 ├── tests/
 │   ├── test_graph.py     # Pruebas de la estructura de grafo
 │   └── test_solver.py    # Pruebas básicas, límite y adversarias de los algoritmos
@@ -68,19 +69,45 @@ pytest tests/ -v
 python experiments/compare.py
 ```
 
+## Interfaz gráfica (proyeccion futura)
+
+Además del modo consola —que se conserva tal cual— el proyecto incluye un
+visualizador interactivo de grafos:
+
+```bash
+python visualizer.py
+```
+
+Permite:
+
+- **Generar grafos aleatorios** (Erdős–Rényi `G(n,p)` o Barabási–Albert) eligiendo
+  `n`, `p`/`m` y semilla, además de **cargar cualquier instancia JSON** del formato
+  del proyecto (así no dependes solo de las dos instancias de ejemplo).
+- **Ejecutar los algoritmos** (greedy, matching, exacto por fuerza bruta, exacto ILP)
+  y **ver la cobertura resaltada** sobre el propio grafo: vértices en cobertura en
+  naranja, y las aristas sin cubrir en rojo punteado (debería quedar vacío en una
+  cobertura válida).
+- Ver por cada algoritmo el **tamaño, validez, tiempo y ratio** frente al óptimo.
+- **Exportar la imagen** a PNG y el **grafo actual a JSON** (para luego usarlo con
+  `demo.py`).
+
+> `demo.py` y `experiments/compare.py` **no se modificaron**: la interfaz gráfica es
+> una capa adicional. El módulo de dibujo vive en `src/viz.py` y se prueba sin abrir
+> ventanas (`tests/test_viz.py`).
+
 ## Algoritmos implementados
 
-| Algoritmo | Archivo | Garantía | Complejidad |
-|---|---|---|---|
-| Greedy por grado | `src/solver.py::greedy_degree_vertex_cover` | Sin cota fija (heurística) | O(V·E) |
-| Matching maximal (2-aprox) | `src/solver.py::maximal_matching_vertex_cover` | ≤ 2·óptimo | O(V+E) |
-| Exacto (fuerza bruta) | `src/solver.py::exact_vertex_cover_bruteforce` | Óptimo | O(2^V · E), solo referencia en instancias pequeñas |
+| Algoritmo                  | Archivo                                        | Garantía                   | Complejidad                                        |
+| -------------------------- | ---------------------------------------------- | -------------------------- | -------------------------------------------------- |
+| Greedy por grado           | `src/solver.py::greedy_degree_vertex_cover`    | Sin cota fija (heurística) | O(V·E)                                             |
+| Matching maximal (2-aprox) | `src/solver.py::maximal_matching_vertex_cover` | ≤ 2·óptimo                 | O(V+E)                                             |
+| Exacto (fuerza bruta)      | `src/solver.py::exact_vertex_cover_bruteforce` | Óptimo                     | O(2^V · E), solo referencia en instancias pequeñas |
 
 ## Integrantes
 
-| Nombre |
-|---|
-| Steffano Ricardo Caballero Zegarra | 
+| Nombre                             |
+| ---------------------------------- |
+| Steffano Ricardo Caballero Zegarra |
 | Adriel Alfredo Llactahuamani Ayala |
 | Albert Erik Morocco Amanca         |
 | Diego Alonso Quispe Castilla       |
