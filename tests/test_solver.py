@@ -181,3 +181,125 @@ class TestCasosAdversarios:
         s = make_solver(g)
         for cover in (s.greedy_degree_vertex_cover(), s.maximal_matching_vertex_cover()):
             assert uncovered_edges(g, cover) == set()
+
+
+# ======================================================================
+# 4. PRUEBAS AVANCE 4: PRIMER ALGORITMO (GREEDY Y VERSION HEAP)
+# ======================================================================
+
+class TestAvance4PrimerAlgoritmo:
+    def test_greedy_priority_queue_coincide_con_solucion_manual(self):
+        """La version optimizada O((V+E)log V) debe resolver el ejemplo manual del Avance 1."""
+        g = Graph.from_json("data/instances/example_small.json")
+        s = make_solver(g)
+        cover_pq = s.greedy_priority_queue_vertex_cover()
+        assert is_vertex_cover(g, cover_pq)
+        assert len(cover_pq) == 3
+        assert cover_pq == {"A", "B", "E"}
+
+    @pytest.mark.parametrize("seed", [1, 2, 3, 4, 5])
+    def test_greedy_pq_produce_coberturas_validas_en_grafos_aleatorios(self, seed):
+        """Verifica que greedy con heap genere coberturas validas en grafos aleatorios."""
+        g = Graph.random_graph(n=16, p=0.35, seed=seed)
+        s = make_solver(g)
+        cover_basic = s.greedy_degree_vertex_cover()
+        cover_pq = s.greedy_priority_queue_vertex_cover()
+
+        assert is_vertex_cover(g, cover_basic)
+        assert is_vertex_cover(g, cover_pq)
+        # Ambas son heuristicas greedy por grado, por lo que su tamano debe ser identico o muy cercano
+        assert abs(len(cover_basic) - len(cover_pq)) <= 1
+
+    def test_greedy_pq_en_casos_limite(self):
+        """Casos limite: grafo vacio, una arista, vertices aislados."""
+        # Vacio
+        s_vacio = make_solver(Graph(vertices=["A", "B"], edges=[]))
+        assert s_vacio.greedy_priority_queue_vertex_cover() == set()
+
+        # Una arista
+        s_arista = make_solver(Graph(vertices=["A", "B"], edges=[("A", "B")]))
+        c = s_arista.greedy_priority_queue_vertex_cover()
+        assert len(c) == 1
+        assert c in ({"A"}, {"B"})
+
+        # Vertices aislados no deben ser seleccionados
+        s_aislado = make_solver(Graph(vertices=["A", "B", "Z"], edges=[("A", "B")]))
+        assert "Z" not in s_aislado.greedy_priority_queue_vertex_cover()
+
+
+# ======================================================================
+# 5. PRUEBAS AVANCE 5: SEGUNDA ALTERNATIVA E INTEGRACION DEL SISTEMA
+# ======================================================================
+
+class TestAvance5SegundaAlternativaEIntegracion:
+    def test_ilp_coincide_con_fuerza_bruta_en_instancias_pequenas(self):
+        """Comprueba que el solver ILP (PuLP) entregue el mismo tamano optimo que fuerza bruta."""
+        g = Graph.from_json("data/instances/example_small.json")
+        s = make_solver(g)
+        ilp_cover = s.exact_vertex_cover_ilp()
+        bf_cover = s.exact_vertex_cover_bruteforce()
+
+        assert is_vertex_cover(g, ilp_cover)
+        assert is_vertex_cover(g, bf_cover)
+        assert len(ilp_cover) == len(bf_cover) == 3
+
+    @pytest.mark.parametrize("seed", [10, 20, 30])
+    def test_ilp_vs_bruteforce_en_grafos_aleatorios(self, seed):
+        """Validacion cruzada entre fuerza bruta e ILP sobre grafos aleatorios."""
+        g = Graph.random_graph(n=10, p=0.4, seed=seed)
+        s = make_solver(g)
+        assert len(s.exact_vertex_cover_ilp()) == len(s.exact_vertex_cover_bruteforce())
+
+    def test_interfaz_comun_solve_retorna_metricas_completas(self):
+        """Verifica que el metodo solve provea la interfaz comun de ejecucion y medicion."""
+        g = Graph.from_json("data/instances/example_small.json")
+        s = make_solver(g)
+
+        for key in ["greedy", "greedy_pq", "matching", "exact", "ilp"]:
+            res = s.solve(key)
+            assert res["key"] == key
+            assert "label" in res
+            assert isinstance(res["cover"], set)
+            assert isinstance(res["size"], int)
+            assert res["valid"] is True
+            assert res["time_ms"] >= 0.0
+            assert res["memory_kib"] >= 0.0
+
+    def test_solve_con_algoritmo_desconocido_lanza_error(self):
+        g = Graph()
+        s = make_solver(g)
+        with pytest.raises(KeyError, match="desconocido"):
+            s.solve("algoritmo_fantasma")
+
+    def test_demostracion_equivalencia_greedy_y_matching_en_triangulo(self):
+        """
+        En un triangulo K3, tanto Greedy como Matching maximal devuelven
+        exactamente el mismo tamano (2), que ademas es el optimo.
+        """
+        g = Graph(vertices=["A", "B", "C"], edges=[("A", "B"), ("B", "C"), ("A", "C")])
+        s = make_solver(g)
+        res_greedy = s.solve("greedy")
+        res_matching = s.solve("matching")
+        res_ilp = s.solve("ilp")
+
+        assert res_greedy["size"] == res_matching["size"] == res_ilp["size"] == 2
+
+    def test_demostracion_diferencia_esperada_en_estrella(self):
+        """
+        En un grafo estrella K_{1,5}:
+        - Greedy selecciona el router central (tamano 1, optimo).
+        - Matching toma una arista centro-hoja y anade ambos extremos (tamano 2).
+        Esta discrepancia responde al criterio teorico de disyuncion de aristas.
+        """
+        leaves = [f"Router_{i}" for i in range(5)]
+        g = Graph(vertices=["Hub"] + leaves, edges=[("Hub", leaf) for leaf in leaves])
+        s = make_solver(g)
+
+        res_greedy = s.solve("greedy")
+        res_matching = s.solve("matching")
+        res_ilp = s.solve("ilp")
+
+        assert res_greedy["size"] == res_ilp["size"] == 1
+        assert res_matching["size"] == 2
+        assert res_matching["size"] > res_greedy["size"]
+

@@ -16,8 +16,21 @@ from __future__ import annotations
 
 from itertools import combinations
 from typing import Hashable
+import heapq
+import time
+import tracemalloc
 
 from .graph import Graph
+from .verify import is_vertex_cover
+
+
+ALGORITHMS_REGISTRY = {
+    "greedy": ("Greedy por grado", "greedy_degree_vertex_cover"),
+    "greedy_pq": ("Greedy (cola de prioridad)", "greedy_priority_queue_vertex_cover"),
+    "matching": ("Matching maximal (2-aprox)", "maximal_matching_vertex_cover"),
+    "exact": ("Exacto (fuerza bruta)", "exact_vertex_cover_bruteforce"),
+    "ilp": ("Exacto (ILP / PuLP)", "exact_vertex_cover_ilp"),
+}
 
 
 class VertexCoverSolver:
@@ -76,6 +89,62 @@ class VertexCoverSolver:
                 (u, v) for (u, v) in remaining_edges
                 if u != best_vertex and v != best_vertex
             ]
+
+        return cover
+
+    # ------------------------------------------------------------------
+    # 1b. Greedy por grado optimizado con Cola de Prioridad (Heap)
+    # ------------------------------------------------------------------
+    def greedy_priority_queue_vertex_cover(self) -> set:
+        """
+        Version optimizada del Greedy por grado usando una cola de prioridad (heapq).
+        Reduce la complejidad temporal de O(V * E) a O((V + E) log V).
+
+        Estrategia:
+        - Mantiene dinamicamente las aristas incidentes no cubiertas por vertice.
+        - Utiliza un min-heap con claves negativas (-deg, str(u), u) para simular
+          un max-heap de forma determinista y canonica.
+        - Emplea actualizacion diferida (lazy update): cuando el grado real en el
+          diccionario es menor al extraido del heap, se descarta o reinserta.
+        - En cada paso selecciona el vertice de mayor grado respecto a las aristas
+          pendientes, lo anade a la cobertura y actualiza a sus vecinos en O(deg(u) log V).
+        """
+        if not self.graph.edges:
+            return set()
+
+        adj_rem: dict[Hashable, set] = {v: set(self.graph.neighbors(v)) for v in self.graph.vertices}
+        total_uncovered_edges = self.graph.num_edges()
+
+        # Construir heap inicial: (-grado, str_v, v)
+        heap = [(-len(adj_rem[v]), str(v), v) for v in self.graph.vertices if len(adj_rem[v]) > 0]
+        heapq.heapify(heap)
+
+        cover: set = set()
+
+        while total_uncovered_edges > 0 and heap:
+            neg_deg, _, best_vertex = heapq.heappop(heap)
+            current_deg = len(adj_rem[best_vertex])
+
+            # Lazy update: si el grado cambio desde que se encolo
+            if -neg_deg != current_deg:
+                if current_deg > 0:
+                    heapq.heappush(heap, (-current_deg, str(best_vertex), best_vertex))
+                continue
+
+            if current_deg == 0:
+                continue
+
+            cover.add(best_vertex)
+            neighbors = list(adj_rem[best_vertex])
+
+            for neigh in neighbors:
+                adj_rem[neigh].discard(best_vertex)
+                total_uncovered_edges -= 1
+                new_neigh_deg = len(adj_rem[neigh])
+                if new_neigh_deg > 0:
+                    heapq.heappush(heap, (-new_neigh_deg, str(neigh), neigh))
+
+            adj_rem[best_vertex].clear()
 
         return cover
 
@@ -164,6 +233,9 @@ class VertexCoverSolver:
         durante el aprendizaje autonomo del indicador AG-C06.02; por ahora
         lanza NotImplementedError si PuLP no esta instalado.
         """
+        if not self.graph.edges:
+            return set()
+
         try:
             import pulp
         except ImportError as exc:
@@ -180,3 +252,55 @@ class VertexCoverSolver:
 
         prob.solve(pulp.PULP_CBC_CMD(msg=False))
         return {v for v, var in x.items() if pulp.value(var) == 1}
+
+    # ------------------------------------------------------------------
+    # 5. Interfaz comun de ejecucion unificada (Avance 5)
+    # ------------------------------------------------------------------
+    def solve(self, algorithm_key: str, **kwargs) -> dict:
+        """
+        Punto de entrada unificado para ejecutar cualquier algoritmo de cobertura.
+        Mide el tiempo de ejecucion en ms, el consumo pico de memoria en KiB,
+        y valida formalmente la solucion obtenida mediante `is_vertex_cover`.
+
+        Parametros:
+            algorithm_key: clave del algoritmo ('greedy', 'greedy_pq', 'matching', 'exact', 'ilp').
+
+        Retorna:
+            dict con las llaves:
+                - 'key': clave interna
+                - 'label': nombre legible
+                - 'cover': conjunto de vertices en la cobertura
+                - 'size': cardinalidad de la cobertura
+                - 'valid': bool indicando si toda arista quedo cubierta
+                - 'time_ms': tiempo de CPU / ejecucion en milisegundos
+                - 'memory_kib': memoria pico utilizada en KiB
+        """
+        if algorithm_key not in ALGORITHMS_REGISTRY:
+            raise KeyError(
+                f"Algoritmo '{algorithm_key}' desconocido. Disponibles: {list(ALGORITHMS_REGISTRY.keys())}"
+            )
+
+        label, method_name = ALGORITHMS_REGISTRY[algorithm_key]
+        method = getattr(self, method_name)
+
+        tracemalloc.start()
+        start_time = time.perf_counter()
+
+        cover = method(**kwargs)
+
+        elapsed_ms = (time.perf_counter() - start_time) * 1000.0
+        _, peak_bytes = tracemalloc.get_traced_memory()
+        tracemalloc.stop()
+
+        cover_set = set(cover)
+        valid = is_vertex_cover(self.graph, cover_set)
+
+        return {
+            "key": algorithm_key,
+            "label": label,
+            "cover": cover_set,
+            "size": len(cover_set),
+            "valid": valid,
+            "time_ms": elapsed_ms,
+            "memory_kib": peak_bytes / 1024.0,
+        }

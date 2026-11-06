@@ -28,6 +28,10 @@ from pathlib import Path
 from typing import Iterable, Hashable
 
 
+class InvalidInstanceError(ValueError):
+    """Excepcion lanzada cuando una instancia no cumple el formato esperado o es invalida."""
+
+
 class Graph:
     """Grafo no dirigido y no ponderado basado en listas de adyacencia."""
 
@@ -81,6 +85,13 @@ class Graph:
     def num_edges(self) -> int:
         return len(self.edges)
 
+    def density(self) -> float:
+        """Calcula la densidad de aristas del grafo: 2|E| / (|V|(|V|-1))."""
+        n = self.num_vertices()
+        if n <= 1:
+            return 0.0
+        return (2.0 * self.num_edges()) / (n * (n - 1))
+
     def is_edge(self, u: Hashable, v: Hashable) -> bool:
         return v in self._adj.get(u, set())
 
@@ -92,10 +103,55 @@ class Graph:
     def __repr__(self) -> str:
         return f"Graph(|V|={self.num_vertices()}, |E|={self.num_edges()})"
 
-    # ---------- I/O ----------
+    # ---------- I/O y validación de instancias ----------
+    @classmethod
+    def validate_instance_data(cls, data: dict) -> None:
+        """Valida que los datos de una instancia cumplan el esquema esperado."""
+        if not isinstance(data, dict):
+            raise InvalidInstanceError("La instancia JSON debe ser un objeto/diccionario.")
+        if "edges" not in data:
+            raise InvalidInstanceError("Falta la clave requerida 'edges' en la instancia JSON.")
+        if not isinstance(data["edges"], (list, tuple)):
+            raise InvalidInstanceError("La clave 'edges' debe ser una lista de pares de vertices.")
+
+        vertices_in_list = set()
+        if "vertices" in data:
+            if not isinstance(data["vertices"], (list, tuple)):
+                raise InvalidInstanceError("La clave 'vertices' debe ser una lista.")
+            for v in data["vertices"]:
+                if not isinstance(v, Hashable):
+                    raise InvalidInstanceError(f"El vertice {v!r} no es hashable.")
+                vertices_in_list.add(v)
+
+        for idx, edge in enumerate(data["edges"]):
+            if not isinstance(edge, (list, tuple)) or len(edge) != 2:
+                raise InvalidInstanceError(
+                    f"Arista invalida en posicion {idx}: debe ser un par [u, v], recibido: {edge!r}"
+                )
+            u, v = edge
+            if not isinstance(u, Hashable) or not isinstance(v, Hashable):
+                raise InvalidInstanceError(f"Los extremos de la arista {edge!r} deben ser hashables.")
+            if u == v:
+                raise InvalidInstanceError(f"No se permiten auto-ciclos: ({u}, {v}) en arista {idx}.")
+
     @classmethod
     def from_json(cls, path: str | Path) -> "Graph":
-        data = json.loads(Path(path).read_text(encoding="utf-8"))
+        p = Path(path)
+        if not p.is_file():
+            raise FileNotFoundError(f"No se encontro el archivo de instancia: {path}")
+
+        try:
+            content = p.read_text(encoding="utf-8")
+        except UnicodeDecodeError as exc:
+            raise InvalidInstanceError(f"El archivo no tiene codificacion UTF-8 valida: {exc}") from exc
+
+        try:
+            data = json.loads(content)
+        except json.JSONDecodeError as exc:
+            raise InvalidInstanceError(f"Error de sintaxis JSON en el archivo '{path}': {exc}") from exc
+
+        cls.validate_instance_data(data)
+
         g = cls(vertices=data.get("vertices", []))
         for u, v in data["edges"]:
             g.add_edge(u, v)

@@ -48,3 +48,56 @@ def test_random_graph_respects_vertex_count():
 def test_barabasi_albert_requires_valid_m():
     with pytest.raises(ValueError):
         Graph.barabasi_albert(n=5, m=5)
+
+
+def test_graph_density():
+    # Grafo vacio o con 1 vertice
+    assert Graph().density() == 0.0
+    assert Graph(vertices=["A"]).density() == 0.0
+
+    # Grafo completo K3: 3 aristas / (3*2/2 = 3) = 1.0
+    k3 = Graph(vertices=["A", "B", "C"], edges=[("A", "B"), ("B", "C"), ("A", "C")])
+    assert k3.density() == 1.0
+
+    # Camino de 2 aristas en 3 vertices: 2 / 3 = 0.6667
+    p3 = Graph(vertices=["A", "B", "C"], edges=[("A", "B"), ("B", "C")])
+    assert round(p3.density(), 4) == 0.6667
+
+
+def test_invalid_instance_errors(tmp_path):
+    from src.graph import InvalidInstanceError
+
+    # Archivo no encontrado
+    with pytest.raises(FileNotFoundError):
+        Graph.from_json("ruta/inexistente/grafo.json")
+
+    # JSON con sintaxis rota
+    broken_json = tmp_path / "broken.json"
+    broken_json.write_text("{esta_roto: true", encoding="utf-8")
+    with pytest.raises(InvalidInstanceError, match="Error de sintaxis JSON"):
+        Graph.from_json(broken_json)
+
+    # JSON que no es un objeto
+    list_json = tmp_path / "list.json"
+    list_json.write_text("[1, 2, 3]", encoding="utf-8")
+    with pytest.raises(InvalidInstanceError, match="debe ser un objeto"):
+        Graph.from_json(list_json)
+
+    # Falta clave edges
+    no_edges = tmp_path / "no_edges.json"
+    no_edges.write_text('{"name": "test", "vertices": ["A"]}', encoding="utf-8")
+    with pytest.raises(InvalidInstanceError, match="Falta la clave requerida 'edges'"):
+        Graph.from_json(no_edges)
+
+    # Arista mal formateada (solo 1 elemento)
+    bad_edge = tmp_path / "bad_edge.json"
+    bad_edge.write_text('{"edges": [["A"]]}', encoding="utf-8")
+    with pytest.raises(InvalidInstanceError, match="Arista invalida"):
+        Graph.from_json(bad_edge)
+
+    # Arista con auto-ciclo
+    self_loop = tmp_path / "self_loop.json"
+    self_loop.write_text('{"edges": [["A", "A"]]}', encoding="utf-8")
+    with pytest.raises(InvalidInstanceError, match="No se permiten auto-ciclos"):
+        Graph.from_json(self_loop)
+

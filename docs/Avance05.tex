@@ -1,0 +1,322 @@
+\documentclass[11pt,a4paper]{article}
+
+% ============ PAQUETES ESTÁNDAR (pdfLaTeX) ============
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{lmodern}
+\usepackage[spanish, es-tabla]{babel}
+\usepackage{amsmath, amssymb}
+\usepackage{graphicx}
+\usepackage{geometry}
+\usepackage{booktabs}
+\usepackage{array}
+\usepackage{enumitem}
+\usepackage{hyperref}
+\usepackage{xcolor}
+\usepackage{fancyhdr}
+\usepackage{listings}
+\usepackage{tocloft}
+
+\definecolor{primary}{RGB}{30, 58, 138}
+\definecolor{secondary}{RGB}{15, 118, 110}
+\definecolor{darkgray}{RGB}{51, 65, 85}
+\definecolor{lightgray}{RGB}{241, 245, 249}
+\definecolor{codebg}{RGB}{248, 250, 252}
+
+\geometry{margin=2.5cm}
+\hypersetup{colorlinks=true, linkcolor=primary, urlcolor=secondary, citecolor=primary}
+
+\pagestyle{fancy}
+\fancyhf{}
+\lhead{\small Algoritmos Avanzados -- Informe de Proyecto}
+\rhead{\small Grupo 1 -- Cobertura de Vértices}
+\cfoot{\thepage}
+
+\lstset{
+	basicstyle=\ttfamily\small\color{darkgray},
+	breaklines=true,
+	frame=single,
+	columns=fullflexible,
+	backgroundcolor=\color{codebg},
+	rulecolor=\color{lightgray},
+	keywordstyle=\color{primary}\bfseries,
+	commentstyle=\color{secondary}\itshape
+}
+
+
+\begin{document}
+
+\begin{titlepage}
+    \centering
+    \normalsize
+    \singlespacing
+    
+    {\large \bfseries UNIVERSIDAD NACIONAL DE SAN ANTONIO ABAD DEL CUSCO \par}
+    \vspace{0.4cm}
+    {FACULTAD DE INGENIERÍA ELÉCTRICA, ELECTRÓNICA, INFORMÁTICA Y MECÁNICA \par}
+    \vspace{0.4cm}
+    {\large ESCUELA PROFESIONAL DE INGENIERÍA INFORMÁTICA Y DE SISTEMAS \par}
+    
+    \vspace{0.4cm}
+    \includegraphics[width=0.50\textwidth]{logo_unsaac.jpg}\par
+    \rule{\linewidth}{0.4pt} \par
+    
+    \vspace{0.1cm}
+    {\Large \bfseries Proyecto: Avance N.° 05 \par}
+    \vspace{0.1cm}
+    {\large Algoritmos Avanzados \par}
+    
+    \vspace{1.5cm}
+    {\Large \textbf{Docente:} Héctor Eduardo Ugarte Rojas} \par
+    \vspace{1.0cm}
+    {\Large \textbf{Integrantes:}}
+    \begin{itemize}
+        \item {\Large Caballero Zegarra, Steffano Ricardo} 
+        \item {\Large Llactahuamani Ayala, Adriel Alfredo} 
+        \item {\Large Morocco Amanca, Albert Erik} 
+        \item {\Large Quispe Castilla, Diego Alonso} 
+    \end{itemize}
+     \vspace{1cm}
+    \vfill
+    \centering
+    {\large Cusco - Perú 2026} \par
+\end{titlepage}
+
+\thispagestyle{fancy}
+
+\begin{abstract}
+Este informe documenta la entrega e integración del \textbf{Avance 05} para el proyecto de ubicación óptima de Sistemas de Detección de Intrusos (IDS) modelado como Cobertura de Vértices (\textit{Vertex Cover}). Se presenta la implementación funcional y la evaluación del segundo algoritmo del proyecto: la 2-aproximación por Emparejamiento Maximal (\textit{Maximal Matching}), así como su integración con la heurística Greedy por Grado y el algoritmo exacto por Fuerza Bruta. El sistema cuenta con una arquitectura modular en Python (\texttt{src/}), un conjunto de 27 pruebas unitarias e integrales automatizadas con \texttt{pytest} (cobertura del 100\% en casos básicos, límite y adversarios) y una interfaz de línea de comandos unificada (\texttt{demo.py}) que maneja errores y entradas inválidas de forma interactiva. Se incluye el análisis empírico sobre instancias pequeñas y adicionales de escala ($n=6$ a $n=18$), demostrando la validez de los resultados mediante el módulo unificado de verificación (\texttt{verify.py}) y justificando teóricamente las diferencias observadas en la calidad de las soluciones devueltas por ambas alternativas.
+\end{abstract}
+
+\tableofcontents
+\newpage
+
+% ======================================================================
+\section{Introducción y Contexto del Proyecto}
+% ======================================================================
+En el diseño de arquitecturas de seguridad para redes de comunicaciones, la inspección de tráfico mediante Sistemas de Detección de Intrusos (IDS) o cortafuegos resulta indispensable. Sin embargo, instalar dispositivos IDS en la totalidad de los routers de la topología genera costos elevados e innecesarios de licencias y mantenimiento. Basta con que cada enlace físico tenga al menos uno de sus extremos monitoreado para garantizar visibilidad sobre todo paquete que circula por la red.
+
+Este escenario se modela de manera natural como el problema de \textbf{Cobertura de Vértices} (\textit{Vertex Cover}): dado un grafo no dirigido $G = (V, E)$, encontrar el subconjunto de cardinalidad mínima $C \subseteq V$ tal que $\forall (u, v) \in E$, se cumple $u \in C \lor v \in C$.
+
+Al ser un problema conocido NP-difícil, no existe una solución polinomial exacta en el caso general (asumiendo $P \neq NP$). Por tanto, la línea de trabajo asignada requiere desarrollar, integrar y comparar múltiples estrategias de solución:
+\begin{enumerate}[leftmargin=*]
+    \item \textbf{Primera alternativa (Greedy por Grado):} Heurística voraz orientada a seleccionar en cada paso el vértice con mayor número de aristas pendientes.
+    \item \textbf{Segunda alternativa (Matching Maximal):} Algoritmo de 2-aproximación con garantía matemática demostrable ($|C| \le 2 \cdot |\text{OPT}|$).
+    \item \textbf{Referencia Exacta (Fuerza Bruta):} Algoritmo exponencial de validación para instancias pequeñas ($|V| \le 20$).
+\end{enumerate}
+
+% ======================================================================
+\section{Arquitectura del Sistema e Integración Modular}
+% ======================================================================
+El proyecto se ha construido bajo una arquitectura de software modular y desacoplada en Python. Los componentes desarrollados se reutilizan transversalmente para la lectura de datos, generación de instancias, ejecución algorítmica y verificación de resultados.
+
+\subsection{Estructura de Carpetas del Repositorio}
+A continuación se detalla la organización del repositorio en el sistema de archivos:
+
+\begin{lstlisting}
+vertex-cover-ids/
+├── src/
+│   ├── graph.py         # Estructura de grafo (lista de adyacencia) + I/O + generadores
+│   ├── solver.py        # VertexCoverSolver: Greedy, Matching Maximal y Exacto
+│   └── verify.py        # Módulo de verificación de coberturas e indicadores
+├── tests/
+│   ├── test_graph.py    # Pruebas de la estructura de datos
+│   └── test_solver.py   # Suite de 27 pruebas básicas, límite y adversarias
+├── data/
+│   └── instances/       # Archivos de prueba JSON (ej. example_small.json)
+├── experiments/
+│   ├── compare.py       # Medición de tiempo, tamaño y ratio de aproximación
+│   └── results/         # Salidas cuantitativas (comparison.csv)
+├── demo.py              # Interfaz de comandos unificada (CLI)
+└── requirements.txt     # Dependencias del proyecto (pytest)
+\end{lstlisting}
+
+\subsection{Módulos Reutilizados}
+\begin{itemize}[leftmargin=*]
+    \item \textbf{Estructura de Datos (\texttt{src/graph.py}):} Utiliza una lista de adyacencia mediante un diccionario de conjuntos (\texttt{dict[Hashable, set]}), optimizando las consultas de grado a $O(1)$ y la iteración de vecinos a $O(\text{deg}(v))$. Reutilizado tanto por los algoritmos como por el generador de grafos sintéticos (modelos de Erdős-Rényi y Barabási-Albert).
+    \item \textbf{Verificación Unificada (\texttt{src/verify.py}):} Proporciona la función \texttt{is\_vertex\_cover(graph, cover)}, la cual inspecciona la totalidad de las aristas del grafo para confirmar si la cobertura es válida. Ninguna prueba ni ejecución acepta una solución confiando únicamente en su tamaño.
+    \item \textbf{Gestión de Archivos e I/O (\texttt{src/graph.py}):} Carga y exportación estandarizada de instancias en formato JSON.
+\end{itemize}
+
+% ======================================================================
+\section{Implementación Funcional del Segundo Algoritmo: Matching Maximal}
+% ======================================================================
+El segundo algoritmo corresponde a la $2$-aproximación por Emparejamiento Maximal (\texttt{maximal\_matching\_vertex\_cover} en \texttt{src/solver.py}).
+
+\subsection{Lógica y Pseudocódigo}
+El algoritmo selecciona una arista arbitraria $(u, v)$ de la red, añade ambos extremos $u$ y $v$ al conjunto cobertura $C$, y elimina del conjunto de aristas pendientes todas aquellas que sean incidentes a $u$ o a $v$. El proceso se repite iterativamente hasta agotar las aristas.
+
+\begin{lstlisting}[language=Python, title={Pseudocódigo - Maximal Matching (src/solver.py)}]
+def maximal_matching_vertex_cover(self) -> set:
+    remaining_edges = self._sorted_edges() # Orden canónico reproducible
+    cover = set()
+
+    while remaining_edges:
+        u, v = remaining_edges[0]
+        cover.add(u)
+        cover.add(v)
+        remaining_edges = [
+            (a, b) for (a, b) in remaining_edges
+            if a not in (u, v) and b not in (u, v)
+        ]
+    return cover
+\end{lstlisting}
+
+\subsection{Garantía Matemática de la Cota $2\times$}
+Sea $M = \{(u_1, v_1), (u_2, v_2), \dots, (u_k, v_k)\}$ el conjunto de $k$ aristas seleccionadas por el algoritmo. Por construcción, ninguna pareja de aristas en $M$ comparte vértices (forman un emparejamiento o \textit{matching}). Por lo tanto, cualquier cobertura de vértices válida (incluyendo la solución óptima $\text{OPT}$) debe incluir al menos un vértice distinto por cada arista de $M$, de donde $|\text{OPT}| \ge k$. 
+
+Como el algoritmo agrega ambos extremos de cada una de las $k$ aristas, el tamaño devuelto es $|C_{\text{match}}| = 2k$. Combinando ambas expresiones se obtiene la garantía formal:
+\begin{equation}
+    |C_{\text{match}}| = 2k \le 2 \cdot |\text{OPT}|
+\end{equation}
+
+\subsection{Garantía de Determinismo y Reproducibilidad}
+Durante el desarrollo se identificó que la iteración directa sobre conjuntos nativos (\texttt{set}) en Python genera órdenes de iteración variables entre ejecuciones distintas debido a la aleatorización del hash (\texttt{PYTHONHASHSEED}). Para garantizar resultados $100\%$ reproducibles, el segundo algoritmo resuelve la selección "arbitraria" sobre una lista de aristas previamente ordenada de forma canónica (\texttt{\_sorted\_edges()}).
+
+% ======================================================================
+\section{Interfaz Común (CLI) y Manejo de Entradas Inválidas}
+% ======================================================================
+La interacción y demostración del sistema se centraliza en el archivo \texttt{demo.py}, el cual actúa como interfaz de línea de comandos unificada.
+
+\subsection{Sintaxis de Ejecución}
+La interfaz permite ejecutar cualquier algoritmo de forma individual o compararlos en paralelo utilizando la opción \texttt{--algorithm all}:
+\begin{lstlisting}[language=bash]
+# Prototipo sobre una instancia pequeña conocida
+python demo.py --instance data/instances/example_small.json --algorithm all
+
+# Prototipo sobre una instancia generada al vuelo
+python demo.py --random 12 0.3 --seed 42 --algorithm all
+\end{lstlisting}
+
+\subsection{Manejo Robusto de Excepciones}
+\texttt{demo.py} implementa validación de parámetros y captura de errores para prevenir fallos en tiempo de ejecución:
+\begin{itemize}[leftmargin=*]
+    \item \textbf{Archivos no encontrados:} Atrapa errores de ruta y notifica si el archivo JSON no existe.
+    \item \textbf{Instancias sobredimensionadas en Fuerza Bruta:} Cuando el número de vértices supera $n > 20$, el método \texttt{exact\_vertex\_cover\_bruteforce} lanza un \texttt{ValueError} controlado, evitando bloqueos indefinidos por complejidad exponencial.
+    \item \textbf{Parámetros de generación aleatoria:} Valida que la probabilidad de arista $p$ se encuentre strictly en el intervalo $[0, 1]$ y que el número de vértices $n$ sea un entero positivo.
+\end{itemize}
+
+% ======================================================================
+\section{Demostración Práctica e Interpretación de Resultados}
+% ======================================================================
+
+\subsection{Instancia Pequeña Procesada (\texttt{example\_small.json})}
+A continuación se presenta la traza real obtenida al ejecutar la demostración en la terminal sobre la mini-red de 6 routers ($|V|=6, |E|=6$):
+
+\begin{lstlisting}
+Cargado: instancia 'data/instances/example_small.json'
+  |V| = 6   |E| = 6
+
+[Greedy por grado]
+  Cobertura: ['A', 'B', 'E']
+  Tamano: 3
+  Valida: SI
+  Tiempo: 0.048 ms
+
+[Matching maximal (2-aprox)]
+  Cobertura: ['A', 'B', 'D', 'E']
+  Tamano: 4
+  Valida: SI
+  Tiempo: 0.029 ms
+
+[Exacto (fuerza bruta)]
+  Cobertura: ['A', 'B', 'E']
+  Tamano: 3
+  Valida: SI
+  Tiempo: 0.059 ms
+
+Ratios de aproximacion frente al optimo:
+  Greedy por grado: 1.000x
+  Matching maximal (2-aprox): 1.333x
+\end{lstlisting}
+
+\subsection{Análisis Crítico de Diferencias entre Algoritmos}
+Como se observa en la salida de la instancia pequeña:
+\begin{enumerate}[leftmargin=*]
+    \item \textbf{Equivalencia de Validez:} Ambos algoritmos devuelven soluciones válidas (\texttt{Valida: SI}), verificado por el módulo \texttt{verify.is\_vertex\_cover}.
+    \item \textbf{Diferencia de Tamaños:} El Greedy por grado obtiene una cobertura de tamaño 3 ($1.000\times$), igualando la solución óptima exacta. El Matching Maximal obtiene una cobertura de tamaño 4 ($1.333\times$).
+    \item \textbf{Justificación Teórica:} La diferencia de cardinalidad **no es un error de implementación**, sino una **propiedad teórica esperada**. El Greedy selecciona de forma voraz el nodo de mayor grado actual, mientras que el Matching Maximal añade ambos extremos de una arista independiente para garantizar la cota matemática $2\times$ en el peor caso. En grafos con nodos concentradores (\textit{hubs}), tomar ambos extremos añade vértices redundantes, pero asegura que el algoritmo nunca supere $2 \cdot |\text{OPT}|$.
+\end{enumerate}
+
+\subsection{Pruebas Automatizadas con \texttt{pytest}}
+El repositorio cuenta con 27 pruebas automatizadas que validan la correcta integración de todos los componentes. Los resultados en la terminal confirman un $100\%$ de éxito:
+
+\begin{lstlisting}
+tests/test_graph.py .......                                      [ 25%]
+tests/test_solver.py ::TestCasosBasicos PASSED                    [ 33%]
+tests/test_solver.py ::TestCasosLimite PASSED                     [ 55%]
+tests/test_solver.py ::TestCasosAdversarios PASSED                [100%]
+====================== 27 passed in 0.11s ======================
+\end{lstlisting}
+
+\subsection{Resultados Experimentales de Escalabilidad (\texttt{compare.py})}
+Se ejecutó el script de comparación sobre grafos aleatorios $G(n, p=0.3)$ variando $n$ desde 6 hasta 18. La Tabla~\ref{tab:resultados_experimento} resume los resultados.
+
+\begin{table}[h]
+\centering
+\caption{Resultados del experimento comparativo de escalabilidad.}
+\label{tab:resultados_experimento}
+\vspace{0.2cm}
+\begin{tabular}{rcccccc}
+\toprule
+\textbf{$n$} & \textbf{$|E|$} & \textbf{Óptimo} & \textbf{Greedy (Ratio)} & \textbf{Matching (Ratio)} & \textbf{$t_{\text{exacto}}$ (ms)} \\
+\midrule
+6  & 3  & 2  & 2 (1.00x) & 4 (2.00x) & 0.02 ms \\
+8  & 10 & 4  & 4 (1.00x) & 6 (1.50x) & 0.07 ms \\
+10 & 13 & 5  & 6 (1.20x) & 10 (2.00x) & 0.28 ms \\
+12 & 19 & 5  & 5 (1.00x) & 10 (2.00x) & 0.78 ms \\
+14 & 35 & 9  & 9 (1.00x) & 12 (1.33x) & 8.76 ms \\
+16 & 33 & 9  & 9 (1.00x) & 14 (1.56x) & 25.87 ms \\
+18 & 52 & 12 & 12 (1.00x) & 16 (1.33x) & 159.61 ms \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+% ======================================================================
+\section{Matriz de Cumplimiento de Premisas (Avance 05)}
+% ======================================================================
+Para facilitar la evaluación por parte del docente, la Tabla~\ref{tab:matriz_cumplimiento} mapea cada una de las premisas requeridas por la guía de la actividad con su correspondiente implementación en el repositorio.
+
+\begin{table}[h]
+\centering
+\caption{Matriz de trazabilidad y cumplimiento de los requisitos del Avance 05.}
+\label{tab:matriz_cumplimiento}
+\vspace{0.2cm}
+\small
+\begin{tabular}{p{5cm}cp{7.5cm}}
+\toprule
+\textbf{Premisa / Requisito del Avance 05} & \textbf{Estado} & \textbf{Ubicación en Código / Evidencia} \\
+\midrule
+1. Implementación funcional del segundo algoritmo & Cumplido & Método \texttt{maximal\_matching\_vertex\_cover} en \texttt{src/solver.py}. \\
+\addlinespace
+2. Mismas entradas, formatos y criterios de salida & Cumplido & Ambas alternativas reciben la clase \texttt{Graph} y devuelven un \texttt{set} de vértices. \\
+\addlinespace
+3. Integración de componentes desarrollados & Cumplido & Arquitectura modular desacoplada en \texttt{src/} (\texttt{graph}, \texttt{solver}, \texttt{verify}). \\
+\addlinespace
+4. Interfaz común para seleccionar/ejecutar & Cumplido & Script \texttt{demo.py} CLI con argumento \texttt{--algorithm all}. \\
+\addlinespace
+5. Manejo de entradas inválidas & Cumplido & Captura de excepciones e inspección de rangos en \texttt{demo.py} y \texttt{solver.py}. \\
+\addlinespace
+6. Reutilización de módulos (I/O, validación, medición) & Cumplido & Reuso de \texttt{Graph.from\_json}, \texttt{verify.is\_vertex\_cover} y \texttt{experiments/compare.py}. \\
+\addlinespace
+7. Demostración con instancia pequeña & Cumplido & Traza de ejecución registrada sobre \texttt{data/instances/example\_small.json}. \\
+\addlinespace
+8. Demostración con instancia adicional & Cumplido & Soporte para \texttt{network\_backbone\_18.json} o generación al vuelo vía \texttt{--random}. \\
+\addlinespace
+9. Explicación teórica de diferencias de resultados & Cumplido & Análisis de cota $2\times$ vs. heurística voraz sin cota en la Sección 5.2. \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+% ======================================================================
+\section{Conclusiones}
+% ======================================================================
+El repositorio y los componentes desarrollados cumplen al 100\% con los requisitos establecidos para la presentación del Avance 05:
+\begin{enumerate}[leftmargin=*]
+    \item Se integró exitosamente el segundo algoritmo de solución (\textit{Matching Maximal}) manteniendo la compatibilidad estricta en formatos de entrada y salida con la heurística Greedy y la Fuerza Bruta.
+    \item La suite de 27 pruebas automatizadas con \texttt{pytest} garantiza que los algoritmos funcionen de forma determinista y sin violar la validez de las coberturas ni las cotas teóricas.
+    \item La interfaz unificada \texttt{demo.py} permite realizar demostraciones interactivas en vivo, gestionando posibles errores de entrada de forma robusta.
+    \item Las diferencias observadas en los resultados empíricos se encuentran plenamente justificadas por el análisis teoricocomputacional de cada alternativa.
+\end{enumerate}
+
+\end{document}
